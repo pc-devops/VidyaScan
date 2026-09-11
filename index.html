@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VidyaScan - AI Test & Marksheet Ingestion</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen antialiased flex flex-col items-center p-4 pb-16">
+  <div class="w-full max-w-md space-y-4">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center py-2 border-b border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="p-2 bg-indigo-600 text-white rounded-xl text-lg">📸</span>
+        <div>
+          <h1 class="text-base font-bold leading-tight">VidyaScan</h1>
+          <p class="text-[10px] text-slate-400">AI Marksheet Scanner for VidyaTrack</p>
+        </div>
+      </div>
+      <button onclick="configureKey()" class="text-[10px] font-bold px-2.5 py-1.5 bg-slate-800 text-slate-300 rounded-xl border border-slate-700">
+        ⚙️ Gemini Key
+      </button>
+    </header>
+
+    <!-- Step 1: Test Details -->
+    <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+      <div class="flex justify-between items-center">
+        <label class="text-[10px] font-bold text-slate-400 uppercase">Step 1: Test Info</label>
+        <span class="text-[10px] text-indigo-400 font-semibold">Active Session</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <input type="text" id="testNameInput" placeholder="e.g. Unit Test 2" value="Unit Test 1" required class="p-2 bg-slate-900 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+        <input type="date" id="testDateInput" class="p-2 bg-slate-900 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+    </div>
+
+    <!-- Step 2: Student Selector -->
+    <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+      <div class="flex justify-between items-center">
+        <label class="text-[10px] font-bold text-slate-400 uppercase">Step 2: Choose Student</label>
+        <button onclick="fetchStudents()" class="text-[10px] text-indigo-400 hover:underline">🔄 Refresh</button>
+      </div>
+      <select id="studentSelect" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">Loading students from VidyaTrack...</option>
+      </select>
+    </div>
+
+    <!-- Step 3: Camera Capture -->
+    <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 space-y-3 text-center">
+      <label class="text-[10px] font-bold text-slate-400 uppercase block text-left">Step 3: Capture Marksheet</label>
+      
+      <div id="imagePreviewBox" class="hidden relative rounded-xl overflow-hidden border border-slate-700 max-h-64 bg-black">
+        <img id="previewImg" class="w-full h-auto object-contain" />
+      </div>
+
+      <label class="cursor-pointer block w-full py-4 border-2 border-dashed border-slate-600 hover:border-indigo-500 rounded-2xl text-xs bg-slate-900/60 transition">
+        <span class="text-2xl block mb-1">📷</span>
+        <span class="font-bold text-indigo-400">Take Photo or Upload Test Paper</span>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelected(event)" />
+      </label>
+
+      <button id="scanBtn" onclick="runAIScan()" disabled class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold rounded-xl text-xs shadow-sm transition">
+        ✨ Extract Marks with AI
+      </button>
+    </div>
+
+    <!-- Step 4: Verification & Push -->
+    <div id="resultBox" class="hidden bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="text-xs font-bold uppercase">Verify Extracted Scores</h3>
+        <button onclick="addResultRow()" class="text-[10px] font-bold text-indigo-400 hover:underline">+ Add Subject</button>
+      </div>
+
+      <div id="detectedRows" class="space-y-2 text-xs"></div>
+
+      <button onclick="saveToVidyaTrack()" id="saveBtn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-lg transition">
+        ✅ Save to VidyaTrack Database
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://potwcgsmaogmnqbktftm.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvdHdjZ3NtYW9nbW5xYmt0ZnRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTQ3OTIsImV4cCI6MjEwNDUzMDc5Mn0.8Tn1cVEbID48PvAOqztUY2sNDDrDBBgYH4V9zH1ksZ8";
+
+    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentImageBase64 = null;
+
+    document.getElementById("testDateInput").value = new Date().toISOString().split('T')[0];
+
+    function configureKey() {
+      const cur = localStorage.getItem("vt_gemini_key") || "";
+      const val = prompt("Enter Google Gemini API Key:", cur);
+      if (val !== null) localStorage.setItem("vt_gemini_key", val.trim());
+    }
+
+    async function fetchStudents() {
+      const sel = document.getElementById("studentSelect");
+      sel.innerHTML = `<option value="">Loading students...</option>`;
+      const { data, error } = await sbClient.from("students").select("id, name, grade_class").eq("is_active", true).order("name");
+      if (error || !data || data.length === 0) {
+        sel.innerHTML = `<option value="">No active students found</option>`;
+        return;
+      }
+      sel.innerHTML = data.map(s => `<option value="${s.id}">${s.name} (${s.grade_class})</option>`).join("");
+    }
+
+    function handleImageSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target.result;
+        currentImageBase64 = dataUrl.split(",")[1];
+        document.getElementById("previewImg").src = dataUrl;
+        document.getElementById("imagePreviewBox").classList.remove("hidden");
+        document.getElementById("scanBtn").disabled = false;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function runAIScan() {
+      if (!currentImageBase64) return;
+      let apiKey = localStorage.getItem("vt_gemini_key");
+      if (!apiKey) {
+        apiKey = prompt("Please enter your Google Gemini API Key:");
+        if (!apiKey) return;
+        localStorage.setItem("vt_gemini_key", apiKey.trim());
+      }
+
+      const scanBtn = document.getElementById("scanBtn");
+      scanBtn.disabled = true;
+      scanBtn.innerText = "Analyzing image with Gemini Vision...";
+
+      const prompt = `
+You are an expert exam scanner assistant.
+Look at this photo of an answer sheet, marksheet, or score table.
+Extract all listed subjects along with their obtained score, maximum marks, and passing minimum score.
+Output ONLY valid JSON in this exact structure without markdown or explanation:
+[
+  {"subject": "Mathematics", "obtained_score": 45, "max_score": 50, "min_score": 18}
+]
+If min_score is not mentioned, use 35. If max_score is not mentioned, use 100.
+`;
+
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: "image/jpeg", data: currentImageBase64 } }
+              ]
+            }]
+          })
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+
+        let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+        rawText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+
+        const subjects = JSON.parse(rawText);
+        renderParsedRows(subjects);
+      } catch (err) {
+        alert("Scan failed: " + err.message + "\nYou can still add rows manually.");
+        renderParsedRows([{"subject": "General", "obtained_score": 0, "max_score": 100, "min_score": 35}]);
+      } finally {
+        scanBtn.disabled = false;
+        scanBtn.innerText = "✨ Extract Marks with AI";
+      }
+    }
+
+    function renderParsedRows(subjects) {
+      const container = document.getElementById("detectedRows");
+      container.innerHTML = "";
+
+      subjects.forEach(s => {
+        const row = document.createElement("div");
+        row.className = "row-item flex gap-1.5 items-center";
+        row.innerHTML = `
+          <input type="text" value="${s.subject || ''}" placeholder="Subject" class="sub-name flex-1 p-2 bg-slate-900 border border-slate-700 rounded-lg outline-none font-medium" />
+          <input type="number" step="0.5" value="${s.obtained_score || 0}" placeholder="Score" class="sub-score w-16 p-2 bg-slate-900 border border-slate-700 rounded-lg text-center font-bold text-indigo-400" />
+          <input type="number" value="${s.max_score || 100}" placeholder="Max" class="sub-max w-16 p-2 bg-slate-900 border border-slate-700 rounded-lg text-center text-slate-400" />
+          <button type="button" onclick="this.parentElement.remove()" class="text-rose-500 font-bold px-1 text-sm">✕</button>
+        `;
+        container.appendChild(row);
+      });
+
+      document.getElementById("resultBox").classList.remove("hidden");
+    }
+
+    function addResultRow() {
+      const container = document.getElementById("detectedRows");
+      const row = document.createElement("div");
+      row.className = "row-item flex gap-1.5 items-center";
+      row.innerHTML = `
+        <input type="text" placeholder="Subject" class="sub-name flex-1 p-2 bg-slate-900 border border-slate-700 rounded-lg outline-none font-medium" />
+        <input type="number" step="0.5" placeholder="Score" class="sub-score w-16 p-2 bg-slate-900 border border-slate-700 rounded-lg text-center font-bold text-indigo-400" />
+        <input type="number" value="100" placeholder="Max" class="sub-max w-16 p-2 bg-slate-900 border border-slate-700 rounded-lg text-center text-slate-400" />
+        <button type="button" onclick="this.parentElement.remove()" class="text-rose-500 font-bold px-1 text-sm">✕</button>
+      `;
+      container.appendChild(row);
+    }
+
+    async function saveToVidyaTrack() {
+      const studentId = document.getElementById("studentSelect").value;
+      const testName = document.getElementById("testNameInput").value.trim();
+      const testDate = document.getElementById("testDateInput").value;
+
+      if (!studentId) return alert("Please select a student first.");
+      if (!testName) return alert("Please enter a test name.");
+
+      const rows = document.querySelectorAll(".row-item");
+      const records = [];
+
+      rows.forEach(r => {
+        const sub = r.querySelector(".sub-name").value.trim();
+        const score = parseFloat(r.querySelector(".sub-score").value) || 0;
+        const max = parseFloat(r.querySelector(".sub-max").value) || 100;
+        if (sub) {
+          records.push({
+            student_id: studentId,
+            test_name: testName,
+            test_date: testDate,
+            subject: sub,
+            obtained_score: score,
+            max_score: max,
+            min_score: 35
+          });
+        }
+      });
+
+      if (records.length === 0) return alert("No valid subject rows found.");
+
+      const saveBtn = document.getElementById("saveBtn");
+      saveBtn.disabled = true;
+      saveBtn.innerText = "Saving to VidyaTrack database...";
+
+      const { error } = await sbClient.from("test_marks").upsert(records, { onConflict: "student_id,test_name,subject" });
+
+      if (error) {
+        alert("Save failed: " + error.message);
+        saveBtn.disabled = false;
+        saveBtn.innerText = "✅ Save to VidyaTrack Database";
+      } else {
+        alert(`Successfully saved ${records.length} subjects to VidyaTrack!`);
+        document.getElementById("resultBox").classList.add("hidden");
+        document.getElementById("imagePreviewBox").classList.add("hidden");
+        currentImageBase64 = null;
+        saveBtn.disabled = false;
+        saveBtn.innerText = "✅ Save to VidyaTrack Database";
+      }
+    }
+
+    fetchStudents();
+  </script>
+</body>
+</html>
