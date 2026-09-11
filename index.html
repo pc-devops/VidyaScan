@@ -19,16 +19,21 @@
           <p class="text-[10px] text-slate-400">AI Marksheet Scanner for VidyaTrack</p>
         </div>
       </div>
-      <button onclick="configureKey()" class="text-[10px] font-bold px-2.5 py-1.5 bg-slate-800 text-slate-300 rounded-xl border border-slate-700">
-        ⚙️ Gemini Key
-      </button>
+      <div class="flex items-center gap-1.5">
+        <button id="authBtn" onclick="toggleAuthModal()" class="text-[10px] font-bold px-2.5 py-1.5 bg-indigo-600/30 text-indigo-300 rounded-xl border border-indigo-500/40">
+          🔒 Login
+        </button>
+        <button onclick="configureKey()" class="text-[10px] font-bold px-2 py-1.5 bg-slate-800 text-slate-300 rounded-xl border border-slate-700">
+          ⚙️
+        </button>
+      </div>
     </header>
 
     <!-- Step 1: Test Details -->
     <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
       <div class="flex justify-between items-center">
         <label class="text-[10px] font-bold text-slate-400 uppercase">Step 1: Test Info</label>
-        <span class="text-[10px] text-indigo-400 font-semibold">Active Session</span>
+        <span id="sessionStatus" class="text-[10px] text-amber-400 font-semibold">🔒 Login Required to Save</span>
       </div>
       <div class="grid grid-cols-2 gap-2">
         <input type="text" id="testNameInput" placeholder="e.g. Unit Test 2" value="Unit Test 1" required class="p-2 bg-slate-900 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -56,7 +61,6 @@
       </div>
 
       <div class="grid grid-cols-2 gap-2.5">
-        <!-- Direct Live Camera -->
         <label class="cursor-pointer flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-500/50 hover:border-indigo-400 rounded-2xl bg-indigo-950/20 active:scale-95 transition">
           <span class="text-3xl mb-1">📸</span>
           <span class="font-bold text-xs text-indigo-300">Live Camera</span>
@@ -64,7 +68,6 @@
           <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelected(event)" />
         </label>
 
-        <!-- Device / Gallery Upload -->
         <label class="cursor-pointer flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-600 hover:border-slate-500 rounded-2xl bg-slate-900/60 active:scale-95 transition">
           <span class="text-3xl mb-1">📁</span>
           <span class="font-bold text-xs text-slate-200">Device Upload</span>
@@ -94,14 +97,82 @@
 
   </div>
 
+  <!-- Login Modal -->
+  <div id="authModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-900 border border-slate-700 p-5 rounded-2xl w-full max-w-sm space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-slate-100">Teacher / Admin Login</h3>
+        <button onclick="toggleAuthModal()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <p class="text-[11px] text-slate-400">Log in with your Supabase credentials to unlock save permissions.</p>
+      <input type="email" id="loginEmail" placeholder="admin@example.com" class="w-full p-2 bg-slate-800 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+      <input type="password" id="loginPass" placeholder="Password" class="w-full p-2 bg-slate-800 border border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500" />
+      <button onclick="handleLogin()" id="loginSubmitBtn" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm">
+        Sign In
+      </button>
+    </div>
+  </div>
+
   <script>
     const SUPABASE_URL = "https://potwcgsmaogmnqbktftm.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvdHdjZ3NtYW9nbW5xYmt0ZnRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTQ3OTIsImV4cCI6MjEwNDUzMDc5Mn0.8Tn1cVEbID48PvAOqztUY2sNDDrDBBgYH4V9zH1ksZ8";
 
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentImageBase64 = null;
+    let currentUser = null;
 
     document.getElementById("testDateInput").value = new Date().toISOString().split('T')[0];
+
+    // Auth Listeners & State
+    sbClient.auth.onAuthStateChange((event, session) => {
+      currentUser = session?.user || null;
+      updateAuthUI();
+    });
+
+    function updateAuthUI() {
+      const authBtn = document.getElementById("authBtn");
+      const statusSpan = document.getElementById("sessionStatus");
+      if (currentUser) {
+        authBtn.innerText = "🔓 Logout";
+        authBtn.className = "text-[10px] font-bold px-2.5 py-1.5 bg-emerald-600/20 text-emerald-400 rounded-xl border border-emerald-500/40";
+        statusSpan.innerText = `● Authenticated (${currentUser.email.split('@')[0]})`;
+        statusSpan.className = "text-[10px] text-emerald-400 font-semibold";
+      } else {
+        authBtn.innerText = "🔒 Login";
+        authBtn.className = "text-[10px] font-bold px-2.5 py-1.5 bg-indigo-600/30 text-indigo-300 rounded-xl border border-indigo-500/40";
+        statusSpan.innerText = "🔒 Login Required to Save";
+        statusSpan.className = "text-[10px] text-amber-400 font-semibold";
+      }
+    }
+
+    function toggleAuthModal() {
+      if (currentUser) {
+        if (confirm("Do you want to log out?")) sbClient.auth.signOut();
+        return;
+      }
+      const m = document.getElementById("authModal");
+      m.classList.toggle("hidden");
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPass").value;
+      const btn = document.getElementById("loginSubmitBtn");
+
+      if (!email || !password) return alert("Please fill in both email and password.");
+      btn.disabled = true;
+      btn.innerText = "Signing in...";
+
+      const { data, error } = await sbClient.auth.signInWithPassword({ email, password });
+      btn.disabled = false;
+      btn.innerText = "Sign In";
+
+      if (error) {
+        alert("Login failed: " + error.message);
+      } else {
+        document.getElementById("authModal").classList.add("hidden");
+      }
+    }
 
     function configureKey() {
       const cur = localStorage.getItem("vt_gemini_key") || "";
@@ -223,6 +294,12 @@ If min_score is not mentioned, use 35. If max_score is not mentioned, use 100.
     }
 
     async function saveToVidyaTrack() {
+      if (!currentUser) {
+        alert("Authorization required: Please log in using the '🔒 Login' button at the top before saving.");
+        toggleAuthModal();
+        return;
+      }
+
       const studentId = document.getElementById("studentSelect").value;
       const testName = document.getElementById("testNameInput").value.trim();
       const testDate = document.getElementById("testDateInput").value;
@@ -259,7 +336,7 @@ If min_score is not mentioned, use 35. If max_score is not mentioned, use 100.
       const { error } = await sbClient.from("test_marks").upsert(records, { onConflict: "student_id,test_name,subject" });
 
       if (error) {
-        alert("Save failed: " + error.message);
+        alert("Database authorization error: " + error.message);
         saveBtn.disabled = false;
         saveBtn.innerText = "✅ Save to VidyaTrack Database";
       } else {
@@ -272,7 +349,12 @@ If min_score is not mentioned, use 35. If max_score is not mentioned, use 100.
       }
     }
 
-    fetchStudents();
+    // Initialize session and student list
+    sbClient.auth.getSession().then(({ data: { session } }) => {
+      currentUser = session?.user || null;
+      updateAuthUI();
+      fetchStudents();
+    });
   </script>
 </body>
 </html>
